@@ -66,8 +66,17 @@
   <section class="map-col" aria-labelledby="mapTitle">
     <h2 id="mapTitle" class="ptitle">Cost per Primary School Pupil</h2>
     <p class="sub" id="mapSub"></p>
+    <div class="view-row">
+      <span class="lbl" id="viewLbl">View</span>
+      <div class="seg" role="group" aria-labelledby="viewLbl">
+        <button type="button" data-view="2d" aria-pressed="true">Flat</button>
+        <button type="button" data-view="3d" aria-pressed="false">3D blocks</button>
+      </div>
+      <span class="small" id="viewHint" hidden>Block height shows the value, starting from zero.</span>
+    </div>
     <div class="map-wrap" id="mapWrap">
       <svg id="map" role="group" aria-label="Map of Scotland's 32 council areas, coloured by the selected measure"></svg>
+      <svg id="map3d" role="group" hidden aria-label="3D map of Scotland's 32 council areas: block height and colour show the selected measure"></svg>
       <span class="inset-note" id="insetNote">Shetland (inset)</span>
     </div>
     <div class="legend" id="legend"></div>

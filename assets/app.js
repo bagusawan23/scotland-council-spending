@@ -43,6 +43,7 @@
     basis: 'real',
     scale: 'year',       // 'year': colour groups fitted to the selected year; 'all': pooled across every year
     council: null,
+    view: '2d',          // '2d' flat choropleth, '3d' extruded blocks
     playing: false,
   };
 
@@ -156,6 +157,13 @@
   const regionEls = new Map();
   let hoverPath, selPath;
 
+  const tipLines = (name) => {
+    const v = val(state.ind, name, state.year);
+    const rk = ranking(state.ind, state.year);
+    if (v == null) return [el('div', 'tip-name', name), el('div', 'tip-sub', 'No data for this measure in ' + state.year)];
+    return [el('div', 'tip-name', name), el('div', 'tip-val', money(v)), el('div', 'tip-sub', rankText(rk.byName.get(name).rank, rk.have.length))];
+  };
+
   function buildMap() {
     const [W, H] = MAP.viewBox;
     const ib = MAP.inset && MAP.inset.box;
@@ -186,12 +194,6 @@
     selPath = svgEl('path', { class: 'outline', id: 'selOutline', 'fill-rule': 'evenodd' });
     svg.append(hoverPath, selPath);
 
-    const tipLines = (name) => {
-      const v = val(state.ind, name, state.year);
-      const rk = ranking(state.ind, state.year);
-      if (v == null) return [el('div', 'tip-name', name), el('div', 'tip-sub', 'No data for this measure in ' + state.year)];
-      return [el('div', 'tip-name', name), el('div', 'tip-val', money(v)), el('div', 'tip-sub', rankText(rk.byName.get(name).rank, rk.have.length))];
-    };
     svg.addEventListener('pointermove', (e) => {
       const p = e.target.closest && e.target.closest('.region');
       if (!p) { setHover(null); hideTip(); return; }
@@ -221,6 +223,8 @@
 
   function setHover(name) {
     hoverPath.setAttribute('d', name ? BY_NAME[name].d : '');
+    hover3d = name;
+    draw3dOutlines();
     rowEls.forEach((o, n) => o.li.classList.toggle('hov', n === name));
   }
 
@@ -409,6 +413,201 @@
     box.appendChild(s);
   }
 
+  /* ------------------------------------------------------------------ 3D blocks */
+  /* Each council is extruded upward by its value. The view is an oblique projection from the south:
+     x stays put, y is squashed by PITCH, and height lifts a point straight up the screen. Only walls
+     that face the viewer are drawn, and councils are painted north to south so nearer blocks cover
+     farther ones. No libraries; the walls are plain SVG paths. */
+  const svg3 = $('#map3d');
+  const PITCH = 0.6;
+  const HMAX = 1250;                 // map units; the tallest block across all years
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const blocks = new Map();          // council -> {g, wall, top, rings}
+  const heightNow = new Map();       // council -> height currently drawn
+  let hover3d = null, insetLabel = null, hoverTop3, selTop3, badges3 = [], view3 = null, anim = 0;
+
+  function parseRings(d) {
+    const rings = [];
+    const re = /M(-?[\d.]+) (-?[\d.]+)l([^z]*)z/g;
+    let m;
+    while ((m = re.exec(d))) {
+      let x = +m[1], y = +m[2];
+      const pts = [[x, y]];
+      const n = m[3].trim().split(/[\s,]+/).map(Number);
+      for (let i = 0; i + 1 < n.length; i += 2) { x += n[i]; y += n[i + 1]; pts.push([x, y]); }
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) { const q = pts[(i + 1) % pts.length]; a += pts[i][0] * q[1] - q[0] * pts[i][1]; }
+      rings.push({ pts, area: a / 2 });
+    }
+    const big = rings.reduce((b, r) => (Math.abs(r.area) > Math.abs(b.area) ? r : b), rings[0] || { area: 1 });
+    const sign = big.area >= 0 ? 1 : -1;
+    rings.forEach((r) => { r.outer = r.area * sign > 0; r.sign = sign; });
+    return rings;
+  }
+
+  const r1 = (n) => Math.round(n);
+  function wallD(rings, h) {
+    let s = '';
+    for (const r of rings) {
+      if (!r.outer) continue;
+      const p = r.pts, n = p.length;
+      for (let i = 0; i < n; i++) {
+        const a = p[i], b = p[(i + 1) % n];
+        const dx = b[0] - a[0];
+        if (r.sign > 0 ? dx >= 0 : dx <= 0) continue;     // only edges whose outward normal points toward the viewer
+        const y1 = r1(a[1] * PITCH), y2 = r1(b[1] * PITCH);
+        s += 'M' + a[0] + ' ' + y1 + 'L' + b[0] + ' ' + y2 + 'L' + b[0] + ' ' + (y2 - h) + 'L' + a[0] + ' ' + (y1 - h) + 'z';
+      }
+    }
+    return s;
+  }
+  function topD(rings, h) {
+    let s = '';
+    for (const r of rings) {
+      s += 'M' + r.pts.map((q) => q[0] + ' ' + r1(q[1] * PITCH - h)).join('L') + 'z';
+    }
+    return s;
+  }
+
+  let maxAll = {};
+  function pooledMax() {
+    const key = state.ind + '|' + state.basis;
+    if (maxAll[key] != null) return maxAll[key];
+    let mx = 0;
+    for (const c of Object.keys(D.data[state.ind])) for (const y of YEARS) { const v = val(state.ind, c, y); if (v != null && v > mx) mx = v; }
+    return (maxAll[key] = mx || 1);
+  }
+
+  function build3d() {
+    const [W, H] = MAP.viewBox;
+    const ib = MAP.inset && MAP.inset.box;
+    const minX = Math.min(0, ib ? ib[0] : 0) - 80;
+    const maxX = Math.max(W, ib ? ib[2] : W) + 80;
+    const minY = Math.min(0, ib ? ib[1] : 0);
+    const top = minY * PITCH - HMAX - 420;
+    const bottom = (H + 60) * PITCH;
+    view3 = { minX, maxX, top, bottom };
+    svg3.setAttribute('viewBox', `${minX} ${top} ${maxX - minX} ${bottom - top}`);
+
+    if (ib) {
+      const q = [[ib[0], ib[1]], [ib[2], ib[1]], [ib[2], ib[3]], [ib[0], ib[3]]].map((p) => p[0] + ' ' + r1(p[1] * PITCH));
+      svg3.appendChild(svgEl('path', { class: 'base-plate', d: 'M' + q.join('L') + 'z' }));
+      insetLabel = svgEl('text', { x: ib[2], y: r1(ib[3] * PITCH) + 240, 'text-anchor': 'end', class: 'inset-label' });
+      insetLabel.textContent = 'Shetland (inset)';
+    }
+    const order = [...COUNCILS].sort((a, b) => a.cy - b.cy);
+    for (const c of order) {
+      const g = svgEl('g', { class: 'blk na', tabindex: '0', role: 'button' });
+      g.dataset.c = c.lgbf;
+      const wall = svgEl('path', { class: 'wall' });
+      const topP = svgEl('path', { class: 'top', 'fill-rule': 'evenodd' });
+      g.append(wall, topP);
+      svg3.appendChild(g);
+      blocks.set(c.lgbf, { g, wall, top: topP, rings: parseRings(c.d) });
+      heightNow.set(c.lgbf, 0);
+    }
+    if (insetLabel) svg3.appendChild(insetLabel);
+    hoverTop3 = svgEl('path', { class: 'outline', 'fill-rule': 'evenodd' });
+    selTop3 = svgEl('path', { class: 'outline', 'fill-rule': 'evenodd' });
+    svg3.append(hoverTop3, selTop3);
+    for (let i = 0; i < 5; i++) {
+      const g = svgEl('g', { class: 'badge' });
+      g.append(svgEl('circle', { r: 130 }), svgEl('text', {}));
+      g.hidden = true;
+      svg3.appendChild(g);
+      badges3.push(g);
+    }
+
+    svg3.addEventListener('pointermove', (e) => {
+      const p = e.target.closest && e.target.closest('.blk');
+      if (!p) { setHover(null); hideTip(); return; }
+      setHover(p.dataset.c);
+      if (e.pointerType !== 'touch') showTip(e.clientX, e.clientY, tipLines(p.dataset.c));
+    });
+    svg3.addEventListener('pointerleave', () => { setHover(null); hideTip(); });
+    svg3.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') { setHover(null); hideTip(); } });
+    svg3.addEventListener('click', (e) => {
+      const p = e.target.closest && e.target.closest('.blk');
+      if (p) toggleSelect(p.dataset.c);
+    });
+    svg3.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('blk')) {
+        e.preventDefault();
+        toggleSelect(e.target.dataset.c);
+      }
+    });
+    svg3.addEventListener('focusin', (e) => {
+      if (!e.target.classList || !e.target.classList.contains('blk')) return;
+      const r = e.target.getBoundingClientRect();
+      setHover(e.target.dataset.c);
+      showTip(r.left + r.width / 2, r.top + r.height / 2, tipLines(e.target.dataset.c));
+    });
+    svg3.addEventListener('focusout', () => { setHover(null); hideTip(); });
+  }
+
+  function draw3d(heights) {
+    for (const [name, b] of blocks) {
+      const h = heights.get(name);
+      b.wall.setAttribute('d', wallD(b.rings, h));
+      b.top.setAttribute('d', topD(b.rings, h));
+    }
+    draw3dOutlines();
+    drawBadges();
+  }
+  function draw3dOutlines() {
+    if (!hoverTop3) return;
+    const at = (n) => (n && blocks.has(n) ? topD(blocks.get(n).rings, heightNow.get(n)) : '');
+    hoverTop3.setAttribute('d', at(hover3d));
+    selTop3.setAttribute('d', at(state.council));
+  }
+  let badgeRank = [];
+  function drawBadges() {
+    badges3.forEach((g, i) => {
+      const r = badgeRank[i];
+      if (!r) { g.hidden = true; return; }
+      const c = BY_NAME[r.name];
+      const h = heightNow.get(r.name);
+      g.hidden = false;
+      g.setAttribute('transform', `translate(${r1(c.cx)} ${r1(c.cy * PITCH - h - 170)})`);
+      const t = g.querySelector('text');
+      t.textContent = String(r.rank);
+      t.style.fontSize = '170px';
+    });
+  }
+
+  function render3d(ctx) {
+    if (state.view !== '3d') return;
+    const mx = pooledMax();
+    const target = new Map();
+    for (const c of COUNCILS) {
+      const v = val(state.ind, c.lgbf, state.year);
+      const k = klass(v, ctx.b);
+      const b = blocks.get(c.lgbf);
+      b.g.setAttribute('class', 'blk ' + (k < 0 ? 'na' : 'k' + k));
+      b.g.setAttribute('aria-pressed', String(state.council === c.lgbf));
+      b.g.setAttribute('aria-label', v == null ? `${c.lgbf}: no data` : `${c.lgbf}: ${money(v)}, ${rankText(ctx.rk.byName.get(c.lgbf).rank, ctx.rk.have.length)}`);
+      target.set(c.lgbf, v == null ? 30 : Math.max(30, (v / mx) * HMAX));
+    }
+    badgeRank = ctx.rk.have.slice(0, 5);
+    cancelAnimationFrame(anim);
+    const from = new Map(heightNow);
+    const first = [...from.values()].every((h) => h === 0);
+    if (reduceMotion || first) {
+      target.forEach((h, n) => heightNow.set(n, h));
+      draw3d(heightNow);
+      return;
+    }
+    const t0 = performance.now(), dur = 450;
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      target.forEach((h, n) => heightNow.set(n, Math.round(from.get(n) + (h - from.get(n)) * e)));
+      draw3d(heightNow);
+      if (t < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+
   /* ------------------------------------------------------------------ ranking */
   const rowEls = new Map();
   function buildRows() {
@@ -545,6 +744,12 @@
     $('#measure').value = state.ind;
     document.querySelectorAll('[data-basis]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.basis === state.basis)));
     document.querySelectorAll('[data-scale]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.scale === state.scale)));
+    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+    const three = state.view === '3d';
+    svg.toggleAttribute('hidden', three);      // SVG elements have no .hidden property
+    svg3.toggleAttribute('hidden', !three);
+    $('#viewHint').hidden = !three;
+    $('#insetNote').hidden = three || !(MAP.inset && MAP.inset.box);
     $('#year').value = String(YEARS.indexOf(state.year));
     $('#yearOut').textContent = state.year;
     $('#play').textContent = state.playing ? 'Pause' : 'Play';
@@ -556,10 +761,11 @@
     if (YEARS.includes(p.get('y'))) state.year = p.get('y');
     if (p.get('p') === 'real' || p.get('p') === 'cash') state.basis = p.get('p');
     if (p.get('s') === 'year' || p.get('s') === 'all') state.scale = p.get('s');
+    if (p.get('v') === '2d' || p.get('v') === '3d') state.view = p.get('v');
     state.council = BY_NAME[p.get('c')] ? p.get('c') : null;
   }
   function writeHash() {
-    const p = new URLSearchParams({ m: state.ind, y: state.year, p: state.basis, s: state.scale });
+    const p = new URLSearchParams({ m: state.ind, y: state.year, p: state.basis, s: state.scale, v: state.view });
     if (state.council) p.set('c', state.council);
     try { history.replaceState(null, '', '#' + p.toString()); } catch (e) { /* not available from file:// in some browsers */ }
   }
@@ -570,6 +776,7 @@
     const ctx = compute();
     renderControls();
     renderMap(ctx);
+    render3d(ctx);
     renderLegend(ctx);
     renderFocus(ctx);
     renderRanking(ctx);
@@ -620,6 +827,7 @@
   /* ------------------------------------------------------------------ start */
   buildSelect();
   buildMap();
+  build3d();
   buildRows();
   readHash();
 
@@ -628,6 +836,7 @@
   $('#measure').addEventListener('change', (e) => { state.ind = e.target.value; update(); });
   document.querySelectorAll('[data-basis]').forEach((b) => b.addEventListener('click', () => { state.basis = b.dataset.basis; update(); }));
   document.querySelectorAll('[data-scale]').forEach((b) => b.addEventListener('click', () => { state.scale = b.dataset.scale; update(); }));
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => { state.view = b.dataset.view; hideTip(); update(); }));
   $('#year').addEventListener('input', (e) => { stopPlay(); state.year = YEARS[+e.target.value]; update(); });
   $('#play').addEventListener('click', () => (state.playing ? stopPlay() : startPlay()));
   $('#clearSel').addEventListener('click', () => { state.council = null; update(); });

@@ -11,9 +11,10 @@ It is plain HTML, CSS and JavaScript. There is no build step, no framework and n
 - **Ranking**: all councils from highest to lowest, with Scotland marked.
 - **Measures table**: how the selected council ranks on all 21 measures in the chosen year.
 - **Prices**: real values (2024-25 prices) or as reported. Real values are the inflation-adjusted series published in the source data.
+- **3D blocks**: switch the map to extruded blocks. Each council rises from the ground by its value, with the same colours and the top five ranked. Heights start at zero and use one scale across all years, so blocks grow and shrink honestly as you step through time. It is drawn with plain SVG (an oblique view from the south), no 3D library.
 - **Table view**: the map data as a table, for screen readers and for checking values.
 
-The page state is kept in the URL (`#m=CHN01&y=2024-25&p=real&s=year&c=Glasgow+City`), so a view can be shared as a link.
+The page state is kept in the URL (`#m=CHN01&y=2024-25&p=real&s=year&v=3d&c=Glasgow+City`), so a view can be shared as a link.
 
 ## Run it
 

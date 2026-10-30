@@ -124,7 +124,26 @@ select {
 
 /* Map */
 .map-wrap { position: relative; margin-top: 12px; }
-#map { display: block; width: 100%; height: auto; }
+#map, #map3d { display: block; width: 100%; height: auto; }
+#map3d[hidden], #map[hidden] { display: none; }
+.view-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 12px 0 4px; }
+
+/* 3D blocks: tops use the map ramp; side walls are the same colour, darkened */
+.blk { cursor: pointer; }
+.blk:focus { outline: none; }
+.blk .top { stroke: var(--surface); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.blk .wall { stroke: none; }
+.blk.k0 .top { fill: var(--k0); } .blk.k1 .top { fill: var(--k1); } .blk.k2 .top { fill: var(--k2); }
+.blk.k3 .top { fill: var(--k3); } .blk.k4 .top { fill: var(--k4); } .blk.na .top { fill: var(--na); }
+.blk.k0 .wall { fill: color-mix(in srgb, var(--k0) 62%, #000); } .blk.k1 .wall { fill: color-mix(in srgb, var(--k1) 62%, #000); }
+.blk.k2 .wall { fill: color-mix(in srgb, var(--k2) 62%, #000); } .blk.k3 .wall { fill: color-mix(in srgb, var(--k3) 62%, #000); }
+.blk.k4 .wall { fill: color-mix(in srgb, var(--k4) 62%, #000); } .blk.na .wall { fill: color-mix(in srgb, var(--na) 62%, #000); }
+.blk:focus-visible .top { stroke: var(--ink); stroke-width: 3px; }
+.base-plate { fill: none; stroke: var(--axis); stroke-width: 1px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.badge circle { fill: var(--ink); stroke: var(--surface); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.badge text { fill: var(--surface); font-weight: 700; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.badge { pointer-events: none; }
+.inset-label { fill: var(--ink-2); font-size: 190px; }
 .region {
   stroke: var(--surface); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke;
   cursor: pointer; transition: fill 0.28s ease;
