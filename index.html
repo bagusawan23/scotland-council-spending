@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Council service costs across Scotland</title>
+<meta name="description" content="An interactive map of what Scotland's 32 councils spend per unit of service, from 2010-11 to 2024-25, built from the Local Government Benchmarking Framework.">
+<script>
+/* Apply a saved theme before first paint so the page does not flash. */
+(function () {
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the dashboard</a>
+
+<header class="masthead">
+  <div class="wrap masthead-in">
+    <div class="titles">
+      <h1>Council service costs across Scotland</h1>
+      <p class="lede">What each of Scotland's 32 councils spends per pupil, per visit, per kilometre and per household, from 2010-11 to 2024-25.</p>
+    </div>
+    <button type="button" class="btn ghost" id="themeBtn" aria-pressed="false">Dark mode</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <form class="controls" id="controls" aria-label="Choose what the dashboard shows">
+    <div class="field grow">
+      <label for="measure">Measure</label>
+      <select id="measure"></select>
+    </div>
+    <div class="field">
+      <span class="lbl" id="basisLbl">Prices</span>
+      <div class="seg" role="group" aria-labelledby="basisLbl">
+        <button type="button" data-basis="real" aria-pressed="true">Real, in 2024-25 prices</button>
+        <button type="button" data-basis="cash" aria-pressed="false">As reported</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="lbl" id="scaleLbl">Map colours</span>
+      <div class="seg" role="group" aria-labelledby="scaleLbl">
+        <button type="button" data-scale="year" aria-pressed="true">This year</button>
+        <button type="button" data-scale="all" aria-pressed="false">All years</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="year">Financial year</label>
+      <div class="yearctl">
+        <button type="button" class="btn" id="play">Play</button>
+        <input id="year" type="range" min="0" max="14" step="1" value="14">
+        <output id="yearOut" for="year">2024-25</output>
+      </div>
+    </div>
+  </form>
+</div>
+
+<main id="main" class="wrap layout">
+  <noscript><p>This dashboard needs JavaScript to draw the map and charts.</p></noscript>
+
+  <section class="map-col" aria-labelledby="mapTitle">
+    <h2 id="mapTitle" class="ptitle">Cost per Primary School Pupil</h2>
+    <p class="sub" id="mapSub"></p>
+    <div class="map-wrap" id="mapWrap">
+      <svg id="map" role="group" aria-label="Map of Scotland's 32 council areas, coloured by the selected measure"></svg>
+      <span class="inset-note" id="insetNote">Shetland (inset)</span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <p class="fine" id="fineNote"></p>
+    <p class="fine">Shetland is drawn as an inset, not in its true position.</p>
+  </section>
+
+  <div class="side-col">
+    <section class="focus" aria-labelledby="focusName">
+      <div class="focus-head">
+        <h2 id="focusName" class="ptitle">Scotland</h2>
+        <button type="button" class="btn ghost small" id="clearSel" hidden>Show Scotland overall</button>
+      </div>
+      <p class="hero"><span id="heroFig" class="hero-fig"></span></p>
+      <p class="sub" id="heroSub"></p>
+      <ul class="facts" id="facts"></ul>
+      <div class="trend-keys" id="trendKeys"></div>
+      <div class="trend" id="trend"></div>
+    </section>
+
+    <section class="rank" aria-labelledby="rankTitle">
+      <h2 id="rankTitle" class="ptitle">All councils, highest to lowest</h2>
+      <p class="sub" id="rankSub"></p>
+      <ul class="rows" id="rows"></ul>
+    </section>
+  </div>
+
+  <section class="profile" aria-labelledby="profTitle">
+    <h2 id="profTitle" class="ptitle">All measures for Scotland</h2>
+    <p class="sub" id="profSub"></p>
+    <div class="tbl-scroll">
+      <table id="profTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="tableview">
+    <summary>View the map data as a table</summary>
+    <div class="tbl-scroll">
+      <table id="dataTable"></table>
+    </div>
+  </details>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p><strong>Data.</strong> Local Government Benchmarking Framework (LGBF), published by the Improvement Service and distributed through Spatial Hub Scotland under the UK Open Government Licence. Real values are the inflation-adjusted series in the source file, expressed in 2024-25 prices. Years are financial years: 2023-24 runs from April 2023 to March 2024.</p>
+    <p><strong>Boundaries.</strong> Local Authority Boundaries for Scotland from Spatial Hub Scotland, simplified for the web; islands under half a square kilometre are left out.</p>
+    <p><strong>Reading the costs.</strong> A higher cost per unit does not always mean a council is less efficient. Rural and island delivery, the mix of people served and the way a service is provided all change what a unit costs. Scotland figures are the national values published in the LGBF.</p>
+    <p class="small">Plain HTML, CSS and JavaScript. No tracking and no requests to other sites.</p>
+  </div>
+</footer>
+
+<div class="sr-only" id="live" aria-live="polite"></div>
+
+<script src="data/lgbf_financial.js"></script>
+<script src="data/council_paths.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
